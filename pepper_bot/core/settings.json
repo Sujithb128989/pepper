@@ -1,0 +1,26 @@
+{
+  "pairs": {
+    "EURUSD": true,
+    "GBPUSD": true,
+    "XAUUSD": false,
+    "NAS100": false
+  },
+  "stop_loss": {
+    "EURUSD": 100,
+    "GBPUSD": 150,
+    "XAUUSD": 200,
+    "NAS100": 500
+  },
+  "trailing_stop": {
+    "EURUSD": 50,
+    "GBPUSD": 75,
+    "XAUUSD": 100,
+    "NAS100": 250
+  },
+  "volume": {
+    "EURUSD": 0.01,
+    "GBPUSD": 0.01,
+    "XAUUSD": 0.01,
+    "NAS100": 0.1
+  }
+}

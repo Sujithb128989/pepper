@@ -1,0 +1,6 @@
+python-telegram-bot
+httpx
+websockets
+ctrader-open-api
+protobuf
+service_identity
