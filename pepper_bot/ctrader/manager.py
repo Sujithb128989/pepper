@@ -14,6 +14,7 @@ class CTraderManager(threading.Thread):
         self.daemon = True
         self.clients: Dict[str, CTraderApiClient] = {}
         self._loop = asyncio.get_running_loop()
+        self.ready = asyncio.Event()
 
     def run(self):
         """This method runs in the new thread."""
@@ -38,7 +39,13 @@ class CTraderManager(threading.Thread):
         """Callback for when a client connects."""
         print(f"Client for account {client.account_id} connected, authenticating...")
         # Schedule the async authentication to run in the Twisted event loop
-        defer.ensureDeferred(client.authenticate_and_authorize())
+        d = defer.ensureDeferred(client.authenticate_and_authorize())
+        d.addCallback(self._check_all_clients_ready)
+
+    def _check_all_clients_ready(self, _):
+        """Checks if all clients are authorized and sets the ready event."""
+        if all(client._is_authorized.is_set() for client in self.clients.values()):
+            self._loop.call_soon_threadsafe(self.ready.set)
 
     def _execute_in_twisted(self, func: Callable, *args, **kwargs) -> asyncio.Future:
         """Schedules a function to be called in the Twisted reactor thread."""

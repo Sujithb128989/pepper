@@ -6,7 +6,7 @@ from pepper_bot.core.database import initialize_db
 from pepper_bot.ctrader.manager import CTraderManager
 from pepper_bot.telegram.bot import run_bot
 
-def main():
+async def main():
     """
     The main entrypoint for the bot.
     Initializes and starts the CTraderManager and the Telegram bot.
@@ -20,6 +20,10 @@ def main():
     print("Starting CTraderManager...")
     ctrader_manager.start()
 
+    print("Waiting for cTrader clients to be ready...")
+    await ctrader_manager.ready.wait()
+    print("cTrader clients are ready.")
+
     print("Starting Telegram bot...")
     run_bot(credentials["telegram_token"])
 
@@ -30,6 +34,6 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        asyncio.run(main())
     except KeyboardInterrupt:
         print("KeyboardInterrupt caught, shutting down.")
