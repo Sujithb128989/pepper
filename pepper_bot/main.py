@@ -1,6 +1,11 @@
+import sys
+import os
 import asyncio
 import signal
 import json
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from pepper_bot.core.database import initialize_db
 from pepper_bot.ctrader.manager import CTraderManager
