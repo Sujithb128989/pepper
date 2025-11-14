@@ -1,79 +1,111 @@
-import json
-from typing import Dict, Any, List, Callable
+from telegram import Update
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    CallbackQueryHandler,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+)
+from urllib.parse import urlparse, parse_qs
 
-import treq
-from twisted.internet import reactor
-from twisted.internet.defer import Deferred, inlineCallbacks
 
-class TelegramBot:
-    """A Twisted-native client for the Telegram Bot API."""
+from pepper_bot.core.config import get_all_settings, set_setting
+from pepper_bot.core.database import get_all_trades
+from pepper_bot.ctrader.auth import get_access_token
+from pepper_bot.telegram.menus import main_menu, settings_menu, pair_selection_menu
 
-    def __init__(self, token: str):
-        self.token = token
-        self.base_url = f"https://api.telegram.org/bot{token}/"
-        self._offset = 0
-        self._command_handlers: Dict[str, Callable] = {}
-        self._callback_handlers: Dict[str, Callable] = {}
+# States for conversation
+SELECTING_ACTION, SELECTING_PAIR_SL, SETTING_SL, SELECTING_PAIR_TS, SETTING_TS, SELECTING_PAIR_VOL, SETTING_VOL, AWAITING_AUTH_1, AWAITING_AUTH_2 = range(9)
 
-    def add_command_handler(self, command: str, handler: Callable):
-        """Adds a command handler."""
-        self._command_handlers[command] = handler
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the main menu."""
+    await update.message.reply_text(
+        "Welcome to Pepper, your cTrader trading bot!",
+        reply_markup=main_menu(),
+    )
+    return SELECTING_ACTION
 
-    def add_callback_handler(self, callback_data: str, handler: Callable):
-        """Adds a callback query handler."""
-        self._callback_handlers[callback_data] = handler
+async def authorize(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the authorization conversation."""
+    credentials = get_all_settings()
+    client_id = credentials["clientId"]
+    redirect_uri = "https://example.com" # This can be any URL
 
-    @inlineCallbacks
-    def _poll(self):
-        """Polls the Telegram API for new updates."""
-        try:
-            response = yield treq.get(
-                self.base_url + "getUpdates",
-                params={"offset": self._offset + 1, "timeout": 30},
-            )
-            content = yield response.json()
+    auth_url = f"https://id.ctrader.com/my/settings/openapi/grantingaccess/?client_id={client_id}&redirect_uri={redirect_uri}&scope=trading&product=web"
 
-            if content["ok"]:
-                for update in content["result"]:
-                    self._offset = update["update_id"]
-                    self._handle_update(update)
-        except Exception as e:
-            print(f"Error while polling for Telegram updates: {e}")
+    await update.message.reply_text(
+        "Please authorize the bot for your first sub-account by visiting the following URL. "
+        "After you have authorized the bot, please paste the full redirect URL back into this chat."
+    )
+    await update.message.reply_text(auth_url)
 
-        reactor.callLater(0.1, self._poll)
+    context.user_data["redirect_uri"] = redirect_uri
+    return AWAITING_AUTH_1
 
-    def _handle_update(self, update: Dict[str, Any]):
-        """Handles an incoming update from the Telegram API."""
-        if "message" in update and "text" in update["message"]:
-            message = update["message"]
-            text = message["text"]
-            if text.startswith("/"):
-                command = text.split(" ")[0][1:]
-                if command in self._command_handlers:
-                    self._command_handlers[command](message)
-        elif "callback_query" in update:
-            callback_query = update["callback_query"]
-            callback_data = callback_query["data"]
-            if callback_data in self._callback_handlers:
-                self._callback_handlers[callback_data](callback_query)
+async def awaiting_auth_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the redirect URL for the first sub-account."""
+    redirect_uri = context.user_data["redirect_uri"]
+    url = urlparse(update.message.text)
+    query = parse_qs(url.query)
+    auth_code = query["code"][0]
 
-    def send_message(self, chat_id: int, text: str, reply_markup: Dict[str, Any] = None) -> Deferred:
-        """Sends a message to a chat."""
-        payload = {"chat_id": chat_id, "text": text}
-        if reply_markup:
-            payload["reply_markup"] = json.dumps(reply_markup)
+    await get_access_token("account1", auth_code, redirect_uri)
 
-        return treq.post(self.base_url + "sendMessage", json=payload)
+    await update.message.reply_text("Account 1 authorized successfully.")
 
-    def edit_message_text(self, chat_id: int, message_id: int, text: str, reply_markup: Dict[str, Any] = None) -> Deferred:
-        """Edits a message in a chat."""
-        payload = {"chat_id": chat_id, "message_id": message_id, "text": text}
-        if reply_markup:
-            payload["reply_markup"] = json.dumps(reply_markup)
+    credentials = get_all_settings()
+    client_id = credentials["clientId"]
 
-        return treq.post(self.base_url + "editMessageText", json=payload)
+    auth_url = f"https://id.ctrader.com/my/settings/openapi/grantingaccess/?client_id={client_id}&redirect_uri={redirect_uri}&scope=trading&product=web"
 
-    def run(self):
-        """Starts the bot."""
-        print("Telegram bot started.")
-        self._poll()
+    await update.message.reply_text(
+        "Please authorize the bot for your second sub-account by visiting the following URL. "
+        "After you have authorized the bot, please paste the full redirect URL back into this chat."
+    )
+    await update.message.reply_text(auth_url)
+
+    return AWAITING_AUTH_2
+
+async def awaiting_auth_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the redirect URL for the second sub-account."""
+    redirect_uri = context.user_data["redirect_uri"]
+    url = urlparse(update.message.text)
+    query = parse_qs(url.query)
+    auth_code = query["code"][0]
+
+    await get_access_token("account2", auth_code, redirect_uri)
+
+    await update.message.reply_text("Account 2 authorized successfully.")
+
+    return ConversationHandler.END
+
+# ... (rest of the bot code)
+
+async def run_bot(token: str):
+    """Runs the Telegram bot."""
+    application = Application.builder().token(token).build()
+
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start), CommandHandler("authorize", authorize)],
+        states={
+            SELECTING_ACTION: [CallbackQueryHandler(main_menu_button, pattern="^(?!settings).*$"), CallbackQueryHandler(settings_button)],
+            SELECTING_PAIR_SL: [CallbackQueryHandler(select_pair_sl)],
+            SETTING_SL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_sl)],
+            SELECTING_PAIR_TS: [CallbackQueryHandler(select_pair_ts)],
+            SETTING_TS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_ts)],
+            SELECTING_PAIR_VOL: [CallbackQueryHandler(select_pair_vol)],
+            SETTING_VOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_vol)],
+            AWAITING_AUTH_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, awaiting_auth_1)],
+            AWAITING_AUTH_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, awaiting_auth_2)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+    )
+
+    application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("stats", stats))
+
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
