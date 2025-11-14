@@ -1,8 +1,12 @@
 import sqlite3
 from typing import Dict, Any, List
 import threading
+import os
 
-DB_FILE = "pepper_bot/core/trades.db"
+# Build the absolute path to the database file
+_DB_DIR = os.path.abspath(os.path.dirname(__file__))
+DB_FILE = os.path.join(_DB_DIR, "trades.db")
+
 _lock = threading.Lock()
 
 def initialize_db():

@@ -1,8 +1,12 @@
 import json
 from typing import Any, Dict
 import threading
+import os
 
-SETTINGS_FILE = "pepper_bot/core/settings.json"
+# Build the absolute path to the settings file
+_SETTINGS_DIR = os.path.abspath(os.path.dirname(__file__))
+SETTINGS_FILE = os.path.join(_SETTINGS_DIR, "settings.json")
+
 _lock = threading.Lock()
 
 def get_all_settings() -> Dict[str, Any]:

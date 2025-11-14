@@ -3,24 +3,32 @@
     "EURUSD": true,
     "GBPUSD": true,
     "XAUUSD": false,
-    "NAS100": false
+    "USTEC": false,
+    "BTCUSD": false,
+    "ETHUSD": false
   },
   "stop_loss": {
     "EURUSD": 100,
     "GBPUSD": 150,
     "XAUUSD": 200,
-    "NAS100": 500
+    "USTEC": 500,
+    "BTCUSD": 1000,
+    "ETHUSD": 500
   },
   "trailing_stop": {
     "EURUSD": 50,
     "GBPUSD": 75,
     "XAUUSD": 100,
-    "NAS100": 250
+    "USTEC": 250,
+    "BTCUSD": 500,
+    "ETHUSD": 250
   },
   "volume": {
     "EURUSD": 0.01,
     "GBPUSD": 0.01,
     "XAUUSD": 0.01,
-    "NAS100": 0.1
+    "USTEC": 0.1,
+    "BTCUSD": 0.01,
+    "ETHUSD": 0.1
   }
 }
