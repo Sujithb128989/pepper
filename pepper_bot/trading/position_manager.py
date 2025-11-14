@@ -2,21 +2,22 @@ from typing import Dict, Any
 
 from pepper_bot.core.config import get_all_settings
 from pepper_bot.core.database import log_trade
-from pepper_bot.ctrader.manager import CTraderManager
+from pepper_bot.ctrader.client import CTraderApiClient
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAExecutionType, ProtoOATradeSide
 
 class PositionManager:
     """
     Manages the open positions and the state machine for the straddle trade.
     """
-    def __init__(self, manager: CTraderManager):
-        self.manager = manager
+    def __init__(self, client1: CTraderApiClient, client2: CTraderApiClient):
+        self.client1 = client1
+        self.client2 = client2
         self.active_straddles: Dict[str, Any] = {}
 
     def start_monitoring(self):
         """Starts monitoring the execution events."""
-        for client in self.manager.clients.values():
-            client.subscribe_to_execution_events(self.handle_execution_event)
+        self.client1.subscribe_to_execution_events(self.handle_execution_event)
+        self.client2.subscribe_to_execution_events(self.handle_execution_event)
 
     def handle_execution_event(self, event: Any):
         """Handles an execution event from the cTrader API."""
@@ -31,7 +32,7 @@ class PositionManager:
             elif straddle["sell"].order.positionId == position_id:
                 self.handle_straddle_event(symbol, "sell", event)
 
-    async def handle_straddle_event(self, symbol: str, side: str, event: Any):
+    def handle_straddle_event(self, symbol: str, side: str, event: Any):
         """Handles an execution event for a straddle trade."""
         straddle = self.active_straddles[symbol]
 
@@ -39,12 +40,13 @@ class PositionManager:
             # One leg of the straddle has closed, so the other is the winner
             winner_side = "buy" if side == "sell" else "sell"
             winner = straddle[winner_side]
+            winner_client = self.client1 if winner_side == "buy" else self.client2
 
             # Move the winner's stop loss to break-even and activate the trailing stop
             settings = get_all_settings()
             trailing_stop = settings["trailing_stop"][symbol]
 
-            await self.manager.clients[winner.account_id].modify_position(
+            winner_client.modify_position(
                 position_id=winner.order.positionId,
                 stop_loss=winner.order.openPrice,
                 trailing_stop=trailing_stop

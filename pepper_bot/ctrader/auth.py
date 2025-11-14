@@ -1,7 +1,8 @@
 import json
 from typing import Dict, Any
 
-import httpx
+import treq
+from twisted.internet.defer import Deferred
 
 CREDENTIALS_FILE = "pepper_bot/core/credentials.json"
 TOKEN_URL = "https://openapi.ctrader.com/apps/token"
@@ -22,7 +23,7 @@ def _save_credentials(credentials: Dict[str, Any]) -> None:
         json.dump(credentials, f, indent=2)
 
 
-async def get_access_token(account_id: str, authorization_code: str, redirect_uri: str) -> Dict[str, Any]:
+def get_access_token(account_id: str, authorization_code: str, redirect_uri: str) -> Deferred:
     """
     Exchanges an authorization code for an access token and refresh token.
     This is typically a one-time operation for initial setup.
@@ -30,25 +31,27 @@ async def get_access_token(account_id: str, authorization_code: str, redirect_ur
     credentials = _load_credentials()
 
     params = {
-        "grant_type": "authorization_code",
-        "code": authorization_code,
-        "redirect_uri": redirect_uri,
-        "client_id": credentials["clientId"],
-        "client_secret": credentials["clientSecret"],
+        "grant_type": b"authorization_code",
+        "code": authorization_code.encode("utf-8"),
+        "redirect_uri": redirect_uri.encode("utf-8"),
+        "client_id": credentials["clientId"].encode("utf-8"),
+        "client_secret": credentials["clientSecret"].encode("utf-8"),
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(TOKEN_URL, params=params)
-        response.raise_for_status()
-        token_data = response.json()
+    d = treq.get(TOKEN_URL, params=params)
+    d.addCallback(treq.json_content)
 
-    credentials["accounts"][account_id]["accessToken"] = token_data["accessToken"]
-    credentials["accounts"][account_id]["refreshToken"] = token_data["refreshToken"]
-    _save_credentials(credentials)
-    return token_data
+    def on_token_data(token_data):
+        credentials["accounts"][account_id]["accessToken"] = token_data["accessToken"]
+        credentials["accounts"][account_id]["refreshToken"] = token_data["refreshToken"]
+        _save_credentials(credentials)
+        return token_data
+
+    d.addCallback(on_token_data)
+    return d
 
 
-async def refresh_access_token(account_id: str) -> Dict[str, Any]:
+def refresh_access_token(account_id: str) -> Deferred:
     """Refreshes an access token using a refresh token."""
     credentials = _load_credentials()
     account_creds = credentials.get("accounts", {}).get(account_id)
@@ -56,21 +59,23 @@ async def refresh_access_token(account_id: str) -> Dict[str, Any]:
         raise ValueError(f"No refresh token found for account: {account_id}")
 
     params = {
-        "grant_type": "refresh_token",
-        "refresh_token": account_creds["refreshToken"],
-        "client_id": credentials["clientId"],
-        "client_secret": credentials["clientSecret"],
+        "grant_type": b"refresh_token",
+        "refresh_token": account_creds["refreshToken"].encode("utf-8"),
+        "client_id": credentials["clientId"].encode("utf-8"),
+        "client_secret": credentials["clientSecret"].encode("utf-8"),
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(TOKEN_URL, params=params)
-        response.raise_for_status()
-        token_data = response.json()
+    d = treq.post(TOKEN_URL, params=params)
+    d.addCallback(treq.json_content)
 
-    credentials["accounts"][account_id]["accessToken"] = token_data["accessToken"]
-    credentials["accounts"][account_id]["refreshToken"] = token_data["refreshToken"]
-    _save_credentials(credentials)
-    return token_data
+    def on_token_data(token_data):
+        credentials["accounts"][account_id]["accessToken"] = token_data["accessToken"]
+        credentials["accounts"][account_id]["refreshToken"] = token_data["refreshToken"]
+        _save_credentials(credentials)
+        return token_data
+
+    d.addCallback(on_token_data)
+    return d
 
 
 def get_credentials(account_id: str) -> Dict[str, Any]:

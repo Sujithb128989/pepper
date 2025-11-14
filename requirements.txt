@@ -1,6 +1,4 @@
-python-telegram-bot==22.5
-httpx
-websockets
 ctrader-open-api
 protobuf
+treq
 service_identity

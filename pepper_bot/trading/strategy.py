@@ -1,11 +1,10 @@
-import asyncio
-from typing import Dict, Any
+from twisted.internet.defer import Deferred, gatherResults
 
 from pepper_bot.core.config import get_all_settings
-from pepper_bot.ctrader.manager import CTraderManager
+from pepper_bot.ctrader.client import CTraderApiClient
 from ctrader_open_api.messages.OpenApiModelMessages_pb2 import ProtoOAOrderType, ProtoOATradeSide
 
-async def place_straddle_trade(manager: CTraderManager, symbol_id: int, symbol_name: str):
+def place_straddle_trade(client1: CTraderApiClient, client2: CTraderApiClient, symbol_id: int, symbol_name: str) -> Deferred:
     """
     Places a straddle trade (simultaneous BUY and SELL orders) on the given symbol.
     """
@@ -18,8 +17,7 @@ async def place_straddle_trade(manager: CTraderManager, symbol_id: int, symbol_n
     # We need to convert the volume and stop loss to the correct format for the API.
     # For now, we'll just pass them as is.
 
-    buy_order_task = manager.place_order(
-        "account1",
+    buy_order_deferred = client1.place_order(
         symbol_id=symbol_id,
         order_type=ProtoOAOrderType.MARKET,
         trade_side=ProtoOATradeSide.BUY,
@@ -27,8 +25,7 @@ async def place_straddle_trade(manager: CTraderManager, symbol_id: int, symbol_n
         stop_loss=stop_loss
     )
 
-    sell_order_task = manager.place_order(
-        "account2",
+    sell_order_deferred = client2.place_order(
         symbol_id=symbol_id,
         order_type=ProtoOAOrderType.MARKET,
         trade_side=ProtoOATradeSide.SELL,
@@ -36,10 +33,14 @@ async def place_straddle_trade(manager: CTraderManager, symbol_id: int, symbol_n
         stop_loss=stop_loss
     )
 
-    buy_order, sell_order = await asyncio.gather(buy_order_task, sell_order_task)
+    d = gatherResults([buy_order_deferred, sell_order_deferred])
 
-    print(f"Straddle trade placed successfully:")
-    print(f"  BUY order: {buy_order}")
-    print(f"  SELL order: {sell_order}")
+    def on_orders_placed(results):
+        buy_order, sell_order = results
+        print(f"Straddle trade placed successfully:")
+        print(f"  BUY order: {buy_order}")
+        print(f"  SELL order: {sell_order}")
+        return buy_order, sell_order
 
-    return buy_order, sell_order
+    d.addCallback(on_orders_placed)
+    return d
