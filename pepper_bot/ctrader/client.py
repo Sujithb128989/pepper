@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Callable
 from concurrent.futures import Future
 import uuid
 
@@ -22,6 +22,7 @@ class CTraderApiClient:
         self.ctid_trader_account_id = None
         self.rest_client = httpx.AsyncClient(base_url="https://openapi.ctrader.com")
         self._pending_requests: Dict[int, asyncio.Future] = {}
+        self._execution_event_callbacks: List[Callable] = []
 
         self.websocket_client = CtraderClient(
             EndPoints.PROTOBUF_DEMO_HOST,
@@ -39,7 +40,10 @@ class CTraderApiClient:
 
     def _on_websocket_message(self, client, message):
         msg_payload_type = message.payloadType
-        if msg_payload_type in self._pending_requests:
+        if msg_payload_type == ProtoOAExecutionEvent().payloadType:
+            for callback in self._execution_event_callbacks:
+                callback(Protobuf.extract(message))
+        elif msg_payload_type in self._pending_requests:
             future = self._pending_requests.pop(msg_payload_type)
             # We need to make sure we're setting the result in the correct event loop
             future.get_loop().call_soon_threadsafe(future.set_result, Protobuf.extract(message))
@@ -101,6 +105,21 @@ class CTraderApiClient:
         response = await self._send_request(request, ProtoOAExecutionEvent().payloadType)
         return response
 
+    async def modify_position(self, position_id: int, stop_loss: float = None, take_profit: float = None, trailing_stop: bool = False) -> Dict[str, Any]:
+        """Modifies an existing position."""
+        request = ProtoOAAmendPositionSLTPReq()
+        request.ctidTraderAccountId = self.ctid_trader_account_id
+        request.positionId = position_id
+        if stop_loss:
+            request.stopLoss = stop_loss
+        if take_profit:
+            request.takeProfit = take_profit
+        if trailing_stop:
+            request.trailingStopLoss = trailing_stop
+
+        response = await self._send_request(request, ProtoOAExecutionEvent().payloadType)
+        return response
+
     def connect(self):
         """Connects to the cTrader WebSocket."""
         self.websocket_client.startService()
@@ -111,3 +130,7 @@ class CTraderApiClient:
         request.ctidTraderAccountId = self.ctid_trader_account_id
         request.symbolId.append(symbol_id)
         self.websocket_client.send(request)
+
+    def subscribe_to_execution_events(self, callback: Callable):
+        """Subscribes to execution events."""
+        self._execution_event_callbacks.append(callback)
