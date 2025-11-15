@@ -2,3 +2,5 @@ ctrader-open-api
 protobuf
 treq
 service_identity
+twisted
+ctrader-open-api

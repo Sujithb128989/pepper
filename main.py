@@ -1,6 +1,12 @@
+import asyncio
+if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+from twisted.internet import asyncioreactor
+asyncioreactor.install()
+
 import sys
 import os
-import asyncio
 import signal
 import json
 
@@ -14,7 +20,7 @@ from pepper_bot.trading.position_manager import PositionManager
 
 # Build the absolute path to the credentials file
 _CREDENTIALS_DIR = os.path.abspath(os.path.dirname(__file__))
-CREDENTIALS_FILE = os.path.join(_CREDENTIALS_DIR, "core/credentials.json")
+CREDENTIALS_FILE = os.path.join(_CREDENTIALS_DIR, "pepper_bot\\core\\credentials.json")
 
 async def main():
     """

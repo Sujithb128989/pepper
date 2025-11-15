@@ -20,10 +20,12 @@ class CTraderManager(threading.Thread):
         """This method runs in the new thread."""
         print("CTraderManager thread started.")
         # Create and set a new asyncio event loop for this thread
+        # Force SelectorEventLoop on Windows
+        if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-        asyncioreactor.install()
 
         for account_id in ["account1", "account2"]:
             client = CTraderApiClient(account_id)
