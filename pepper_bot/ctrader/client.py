@@ -117,14 +117,11 @@ class CTraderApiClient:
             logging.warning(f"Received unhandled message type {message.payloadType}: {msg}")
 
     def authenticate_and_authorize(self):
-        """Authenticates the application and authorizes the trading account."""
+        """Authenticates the application."""
         logging.info(f"Starting authentication.")
         
         if not self.credentials:
             raise Exception(f"No credentials found.")
-        
-        if not self.access_token:
-            logging.warning(f"No access token found.")
         
         auth_req = ProtoOAApplicationAuthReq()
         auth_req.clientId = self.credentials["clientId"]
@@ -136,7 +133,6 @@ class CTraderApiClient:
         from twisted.internet import reactor
         self._app_auth_deferred.addTimeout(10, reactor)
         
-        self._app_auth_deferred.addCallback(self._on_app_authenticated)
         self._app_auth_deferred.addErrback(self._on_auth_error)
         return self._app_auth_deferred
 
@@ -145,19 +141,11 @@ class CTraderApiClient:
         logging.error(f"Authentication error: {failure.getErrorMessage()}")
         return failure
 
-    def _on_app_authenticated(self, response):
-        """Callback when application is authenticated"""
-        logging.info(f"Application authenticated.")
-        
-        if not self.access_token:
-            raise Exception(f"No access token available. Cannot proceed with account authorization.")
-        
-        return self._get_account_list()
-
-    def _get_account_list(self):
+    def get_account_list(self):
         """Get account list after application authentication"""
         logging.info("Getting account list...")
         
+        self.access_token = auth.get_credentials().get("accessToken")
         if not self.access_token:
             raise Exception("Cannot get account list: access token is None")
             
@@ -258,7 +246,7 @@ class CTraderApiClient:
 
     def is_ready(self):
         """Check if the client is fully authenticated and authorized"""
-        return self._is_app_authenticated and self._is_account_authorized
+        return self._is_app_authenticated
 
     def get_account_balance(self, ctid_trader_account_id: int) -> Deferred:
         """Gets the balance of a trading account."""

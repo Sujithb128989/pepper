@@ -9,7 +9,7 @@ def setup_logging():
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
         handlers=[
-            logging.FileHandler("bot.log"),
+            logging.FileHandler("bot.log", mode='a'),
             logging.StreamHandler(sys.stdout)
         ]
     )

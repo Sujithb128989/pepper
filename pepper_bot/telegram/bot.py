@@ -13,14 +13,23 @@ from urllib.parse import urlparse, parse_qs
 
 from pepper_bot.core.config import get_all_settings, set_setting
 from pepper_bot.core.database import get_all_trades
-from pepper_bot.ctrader.auth import get_access_token
+from pepper_bot.ctrader.auth import get_access_token, get_credentials
 from pepper_bot.telegram.menus import main_menu, settings_menu, pair_selection_menu
 
 # States for conversation
-SELECTING_ACTION, SELECTING_PAIR_SL, SETTING_SL, SELECTING_PAIR_TS, SETTING_TS, SELECTING_PAIR_VOL, SETTING_VOL, AWAITING_AUTH = range(8)
+SELECTING_ACTION, SELECTING_PAIR_SL, SETTING_SL, SELECTING_PAIR_TS, SETTING_TS, SELECTING_PAIR_VOL, SETTING_VOL, AWAITING_AUTH, SELECTING_ACCOUNTS = range(9)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the main menu."""
+    credentials = get_credentials()
+    if not credentials.get("accessToken"):
+        await update.message.reply_text(
+            "Welcome to Pepper, your cTrader trading bot!\n\n"
+            "It looks like you haven't authorized the bot yet. "
+            "Please use the /authorize command to get started."
+        )
+        return ConversationHandler.END
+
     await update.message.reply_text(
         "Welcome to Pepper, your cTrader trading bot!",
         reply_markup=main_menu(),
@@ -54,17 +63,74 @@ async def awaiting_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await get_access_token(auth_code, redirect_uri)
 
     await update.message.reply_text("Authorization successful.")
+    await update.message.reply_text("Now, please use the /start command to select your trading accounts.")
 
+    return ConversationHandler.END
+
+async def select_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Starts the account selection process."""
+    ctrader_manager = context.application.user_data["ctrader_manager"]
+    accounts = await ctrader_manager.get_trader_accounts()
+
+    account_details = []
+    for account in accounts:
+        balance = await ctrader_manager.get_account_balance(account.ctidTraderAccountId)
+        account_details.append((account, balance / 100.0))
+
+    if len(account_details) < 2:
+        await update.message.reply_text(
+            "Error: At least two trading accounts are required for the straddle strategy."
+        )
+        return ConversationHandler.END
+    elif len(account_details) == 2:
+        await update.message.reply_text(
+            "Exactly two accounts found. Automatically selecting them for the straddle strategy."
+        )
+        account1 = account_details[0][0]
+        account2 = account_details[1][0]
+    else:
+        # Get user selection
+        message = "Available trading accounts:\n"
+        for i, (account, balance) in enumerate(account_details):
+            message += f"{i+1}. Account ID: {account.ctidTraderAccountId}, Balance: {balance:.2f} {account.currency}\n"
+        message += "\nPlease select two accounts for the straddle strategy (e.g., '1 2'):"
+        await update.message.reply_text(message)
+        context.application.user_data["account_details"] = account_details
+        return SELECTING_ACCOUNTS
+
+    context.application.user_data["account1"] = account1
+    context.application.user_data["account2"] = account2
+    await update.message.reply_text("Accounts selected.")
+    return ConversationHandler.END
+
+async def set_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sets the selected accounts."""
+    selection = update.message.text
+    try:
+        index1, index2 = [int(i) - 1 for i in selection.split()]
+        account_details = context.application.user_data["account_details"]
+        account1 = account_details[index1][0]
+        account2 = account_details[index2][0]
+    except (ValueError, IndexError):
+        await update.message.reply_text(
+            "Invalid selection. Please enter two valid numbers separated by a space."
+        )
+        return SELECTING_ACCOUNTS
+
+    context.application.user_data["account1"] = account1
+    context.application.user_data["account2"] = account2
+    await update.message.reply_text("Accounts selected.")
     return ConversationHandler.END
 
 # ... (rest of the bot code)
 
-async def run_bot(token: str):
+async def run_bot(token: str, ctrader_manager):
     """Runs the Telegram bot."""
     application = Application.builder().token(token).build()
+    application.user_data["ctrader_manager"] = ctrader_manager
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start), CommandHandler("authorize", authorize)],
+        entry_points=[CommandHandler("start", _start), CommandHandler("authorize", authorize), CommandHandler("select_accounts", select_accounts)],
         states={
             SELECTING_ACTION: [CallbackQueryHandler(main_menu_button, pattern="^(?!settings).*$"), CallbackQueryHandler(settings_button)],
             SELECTING_PAIR_SL: [CallbackQueryHandler(select_pair_sl)],
@@ -74,12 +140,15 @@ async def run_bot(token: str):
             SELECTING_PAIR_VOL: [CallbackQueryHandler(select_pair_vol)],
             SETTING_VOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_vol)],
             AWAITING_AUTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, awaiting_auth)],
+            SELECTING_ACCOUNTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_accounts)],
         },
-        fallbacks=[CommandHandler("start", start)],
+        fallbacks=[CommandHandler("start", _start)],
     )
 
     application.add_handler(conv_handler)
-    application.add_handler(CommandHandler("stats", stats))
+    # application.add_handler(CommandHandler("stats", stats))
+
+    await application.bot.send_message(chat_id="5705498219", text="Bot is online!")
 
     await application.initialize()
     await application.start()
