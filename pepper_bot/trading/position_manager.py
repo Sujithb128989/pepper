@@ -9,15 +9,15 @@ class PositionManager:
     """
     Manages the open positions and the state machine for the straddle trade.
     """
-    def __init__(self, client1: CTraderApiClient, client2: CTraderApiClient):
-        self.client1 = client1
-        self.client2 = client2
+    def __init__(self, client: CTraderApiClient, account1_id: int, account2_id: int):
+        self.client = client
+        self.account1_id = account1_id
+        self.account2_id = account2_id
         self.active_straddles: Dict[str, Any] = {}
 
     def start_monitoring(self):
         """Starts monitoring the execution events."""
-        self.client1.subscribe_to_execution_events(self.handle_execution_event)
-        self.client2.subscribe_to_execution_events(self.handle_execution_event)
+        self.client.subscribe_to_execution_events(self.handle_execution_event)
 
     def handle_execution_event(self, event: Any):
         """Handles an execution event from the cTrader API."""
@@ -40,13 +40,13 @@ class PositionManager:
             # One leg of the straddle has closed, so the other is the winner
             winner_side = "buy" if side == "sell" else "sell"
             winner = straddle[winner_side]
-            winner_client = self.client1 if winner_side == "buy" else self.client2
 
             # Move the winner's stop loss to break-even and activate the trailing stop
             settings = get_all_settings()
             trailing_stop = settings["trailing_stop"][symbol]
 
-            winner_client.modify_position(
+            self.client.modify_position(
+                ctid_trader_account_id=winner.order.ctidTraderAccountId,
                 position_id=winner.order.positionId,
                 stop_loss=winner.order.openPrice,
                 trailing_stop=trailing_stop

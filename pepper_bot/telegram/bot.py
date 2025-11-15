@@ -17,7 +17,7 @@ from pepper_bot.ctrader.auth import get_access_token
 from pepper_bot.telegram.menus import main_menu, settings_menu, pair_selection_menu
 
 # States for conversation
-SELECTING_ACTION, SELECTING_PAIR_SL, SETTING_SL, SELECTING_PAIR_TS, SETTING_TS, SELECTING_PAIR_VOL, SETTING_VOL, AWAITING_AUTH_1, AWAITING_AUTH_2 = range(9)
+SELECTING_ACTION, SELECTING_PAIR_SL, SETTING_SL, SELECTING_PAIR_TS, SETTING_TS, SELECTING_PAIR_VOL, SETTING_VOL, AWAITING_AUTH = range(8)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the main menu."""
@@ -36,48 +36,24 @@ async def authorize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth_url = f"https://id.ctrader.com/my/settings/openapi/grantingaccess/?client_id={client_id}&redirect_uri={redirect_uri}&scope=trading&product=web"
 
     await update.message.reply_text(
-        "Please authorize the bot for your first sub-account by visiting the following URL. "
+        "Please authorize the bot by visiting the following URL. "
         "After you have authorized the bot, please paste the full redirect URL back into this chat."
     )
     await update.message.reply_text(auth_url)
 
     context.user_data["redirect_uri"] = redirect_uri
-    return AWAITING_AUTH_1
+    return AWAITING_AUTH
 
-async def awaiting_auth_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the redirect URL for the first sub-account."""
+async def awaiting_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles the redirect URL."""
     redirect_uri = context.user_data["redirect_uri"]
     url = urlparse(update.message.text)
     query = parse_qs(url.query)
     auth_code = query["code"][0]
 
-    await get_access_token("account1", auth_code, redirect_uri)
+    await get_access_token(auth_code, redirect_uri)
 
-    await update.message.reply_text("Account 1 authorized successfully.")
-
-    credentials = get_all_settings()
-    client_id = credentials["clientId"]
-
-    auth_url = f"https://id.ctrader.com/my/settings/openapi/grantingaccess/?client_id={client_id}&redirect_uri={redirect_uri}&scope=trading&product=web"
-
-    await update.message.reply_text(
-        "Please authorize the bot for your second sub-account by visiting the following URL. "
-        "After you have authorized the bot, please paste the full redirect URL back into this chat."
-    )
-    await update.message.reply_text(auth_url)
-
-    return AWAITING_AUTH_2
-
-async def awaiting_auth_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the redirect URL for the second sub-account."""
-    redirect_uri = context.user_data["redirect_uri"]
-    url = urlparse(update.message.text)
-    query = parse_qs(url.query)
-    auth_code = query["code"][0]
-
-    await get_access_token("account2", auth_code, redirect_uri)
-
-    await update.message.reply_text("Account 2 authorized successfully.")
+    await update.message.reply_text("Authorization successful.")
 
     return ConversationHandler.END
 
@@ -97,8 +73,7 @@ async def run_bot(token: str):
             SETTING_TS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_ts)],
             SELECTING_PAIR_VOL: [CallbackQueryHandler(select_pair_vol)],
             SETTING_VOL: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_vol)],
-            AWAITING_AUTH_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, awaiting_auth_1)],
-            AWAITING_AUTH_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, awaiting_auth_2)],
+            AWAITING_AUTH: [MessageHandler(filters.TEXT & ~filters.COMMAND, awaiting_auth)],
         },
         fallbacks=[CommandHandler("start", start)],
     )

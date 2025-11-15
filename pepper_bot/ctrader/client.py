@@ -11,18 +11,16 @@ from pepper_bot.ctrader import auth
 class CTraderApiClient:
     """A Twisted-based client for interacting with the cTrader Open API."""
 
-    def __init__(self, account_id: str):
-        self.account_id = account_id
-        self.credentials = auth.get_credentials(account_id)
+    def __init__(self):
+        self.credentials = auth.get_credentials()
         self.access_token = self.credentials.get("accessToken")
-        self.ctid_trader_account_id = None
+        self.trader_accounts = []
         self._pending_requests: Dict[int, Deferred] = {}
         self._request_id = 1
         self._execution_event_callbacks: List[Callable] = []
         
         # Track authentication state
         self._is_app_authenticated = False
-        self._is_account_authorized = False
 
         # Authentication deferreds
         self._app_auth_deferred = None
@@ -185,59 +183,42 @@ class CTraderApiClient:
         """Handle account list response"""
         if not response.ctidTraderAccount:
             raise Exception(f"No trading accounts found for account {self.account_id}")
-            
-        # For simplicity, we'll use the first account in the list.
-        self.ctid_trader_account_id = response.ctidTraderAccount[0].ctidTraderAccountId
-        print(f"Found account ID: {self.ctid_trader_account_id}")
 
-        # Authorize the trading account
-        return self._authorize_account()
+        self.trader_accounts = list(response.ctidTraderAccount)
+        print(f"Found {len(self.trader_accounts)} trading accounts.")
+        return self.trader_accounts
 
-    def _authorize_account(self):
-        """Authorize the trading account"""
-        print(f"Authorizing account {self.ctid_trader_account_id}...")
-        
+    def authorize_trading_account(self, ctid_trader_account_id: int):
+        """Authorizes a specific trading account."""
+        print(f"Authorizing account {ctid_trader_account_id}...")
+
         if not self.access_token:
             raise Exception("Cannot authorize account: access token is None")
-            
+
         acc_auth_req = ProtoOAAccountAuthReq()
-        acc_auth_req.ctidTraderAccountId = self.ctid_trader_account_id
+        acc_auth_req.ctidTraderAccountId = ctid_trader_account_id
         acc_auth_req.accessToken = self.access_token
 
-        self._account_auth_deferred = Deferred()
-        self.websocket_client.send(acc_auth_req)
-        
-        # Set timeout
-        from twisted.internet import reactor
-        self._account_auth_deferred.addTimeout(10, reactor)
-        
-        self._account_auth_deferred.addCallback(self._on_account_authorized)
-        self._account_auth_deferred.addErrback(self._on_auth_error)
-        return self._account_auth_deferred
+        d = self._send_request(acc_auth_req, ProtoOAAccountAuthRes().payloadType)
 
-    def _on_account_authorized(self, response):
-        """Handle account authorization response"""
-        self._is_account_authorized = True
-        print(f"Account {self.ctid_trader_account_id} for client {self.account_id} authorized.")
-        return response
+        def on_authorized(response):
+            print(f"Account {ctid_trader_account_id} authorized.")
+            return response
 
-    def get_symbols(self) -> Deferred:
+        d.addCallback(on_authorized)
+        return d
+
+    def get_symbols(self, ctid_trader_account_id: int) -> Deferred:
         """Gets all available symbols for the trading account."""
-        if not self._is_account_authorized:
-            raise Exception("Account not authorized yet")
-            
         request = ProtoOASymbolsListReq()
-        request.ctidTraderAccountId = self.ctid_trader_account_id
+        request.ctidTraderAccountId = ctid_trader_account_id
         return self._send_request(request, ProtoOASymbolsListRes().payloadType)
 
-    def place_order(self, symbol_id: int, order_type: ProtoOAOrderType, trade_side: ProtoOATradeSide,
+    def place_order(self, ctid_trader_account_id: int, symbol_id: int, order_type: ProtoOAOrderType, trade_side: ProtoOATradeSide,
                           volume: int, stop_loss: float = None, take_profit: float = None) -> Deferred:
         """Places a new trading order."""
-        if not self._is_account_authorized:
-            raise Exception("Account not authorized yet")
-            
         request = ProtoOANewOrderReq()
-        request.ctidTraderAccountId = self.ctid_trader_account_id
+        request.ctidTraderAccountId = ctid_trader_account_id
         request.symbolId = symbol_id
         request.orderType = order_type
         request.tradeSide = trade_side
@@ -249,13 +230,10 @@ class CTraderApiClient:
 
         return self._send_request(request, ProtoOANewOrderRes().payloadType)
 
-    def modify_position(self, position_id: int, stop_loss: float = None, take_profit: float = None, trailing_stop: bool = False) -> Deferred:
+    def modify_position(self, ctid_trader_account_id: int, position_id: int, stop_loss: float = None, take_profit: float = None, trailing_stop: bool = False) -> Deferred:
         """Modifies an existing position."""
-        if not self._is_account_authorized:
-            raise Exception("Account not authorized yet")
-            
         request = ProtoOAAmendPositionSLTPReq()
-        request.ctidTraderAccountId = self.ctid_trader_account_id
+        request.ctidTraderAccountId = ctid_trader_account_id
         request.positionId = position_id
         if stop_loss:
             request.stopLoss = stop_loss
@@ -270,12 +248,9 @@ class CTraderApiClient:
         """Connects to the cTrader WebSocket."""
         self.websocket_client.startService()
 
-    def subscribe_to_ticks(self, symbol_id: int) -> Deferred:
-        if not self._is_account_authorized:
-            raise Exception("Account not authorized yet")
-            
+    def subscribe_to_ticks(self, ctid_trader_account_id: int, symbol_id: int) -> Deferred:
         request = ProtoOASubscribeSpotsReq()
-        request.ctidTraderAccountId = self.ctid_trader_account_id
+        request.ctidTraderAccountId = ctid_trader_account_id
         request.symbolId.append(symbol_id)
         return self._send_request(request, ProtoOASubscribeSpotsRes().payloadType)
 
@@ -286,3 +261,11 @@ class CTraderApiClient:
     def is_ready(self):
         """Check if the client is fully authenticated and authorized"""
         return self._is_app_authenticated and self._is_account_authorized
+
+    def get_account_balance(self, ctid_trader_account_id: int) -> Deferred:
+        """Gets the balance of a trading account."""
+        request = ProtoOATraderReq()
+        request.ctidTraderAccountId = ctid_trader_account_id
+        d = self._send_request(request, ProtoOATraderRes().payloadType)
+        d.addCallback(lambda response: response.trader.balance)
+        return d
