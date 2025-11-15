@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, Any, List, Callable
 
 from twisted.internet.defer import Deferred
@@ -12,6 +13,7 @@ class CTraderApiClient:
     """A Twisted-based client for interacting with the cTrader Open API."""
 
     def __init__(self):
+        logging.info("Initializing CTraderApiClient.")
         self.credentials = auth.get_credentials()
         self.access_token = self.credentials.get("accessToken")
         self.trader_accounts = []
@@ -27,6 +29,8 @@ class CTraderApiClient:
         self._account_list_deferred = None
         self._account_auth_deferred = None
 
+        self.account_id = None # Will be set during authorization
+
         self.websocket_client = CtraderClient(
             EndPoints.PROTOBUF_DEMO_HOST,
             EndPoints.PROTOBUF_PORT,
@@ -34,9 +38,10 @@ class CTraderApiClient:
         )
         self.websocket_client.setConnectedCallback(self._on_websocket_connected)
         self.websocket_client.setMessageReceivedCallback(self._on_websocket_message)
+        logging.info("CTraderApiClient initialized.")
 
     def _on_websocket_connected(self, client):
-        print(f"WebSocket client for account {self.account_id} connected.")
+        logging.info(f"WebSocket client connected.")
         self.authenticate_and_authorize()
 
     def _send_request(self, request, response_payload_type: int) -> Deferred:
@@ -49,14 +54,14 @@ class CTraderApiClient:
             self._pending_requests[self._request_id] = d
             self._request_id += 1
         
-        # send
+        logging.info(f"Sending request: {request}")
         self.websocket_client.send(request)
         return d
 
     def _on_websocket_message(self, client, message):
         msg = Protobuf.extract(message)
         
-        print(f"Received message type: {message.payloadType}, content: {msg}")
+        logging.info(f"Received message type: {message.payloadType}, content: {msg}")
         
         # First try to handle by requestId
         if hasattr(msg, 'requestId') and msg.requestId in self._pending_requests:
@@ -67,17 +72,15 @@ class CTraderApiClient:
         # Handle error messages
         if hasattr(msg, 'errorCode') and msg.errorCode:
             error_msg = f"Error received: {msg.errorCode} - {getattr(msg, 'description', 'No description')}"
-            print(error_msg)
+            logging.error(error_msg)
             
             # If there's a pending auth deferred, handle the error
             if self._app_auth_deferred is not None:
                 if msg.errorCode == "ALREADY_LOGGED_IN":
-                    # If already logged in, we can proceed to get account list
-                    print("Application already authenticated, proceeding to get account list...")
+                    logging.info("Application already authenticated, proceeding to get account list...")
                     self._is_app_authenticated = True
                     self._app_auth_deferred.callback(msg)
                 else:
-                    # For other errors, errback the deferred
                     from twisted.python.failure import Failure
                     self._app_auth_deferred.errback(Exception(error_msg))
                 self._app_auth_deferred = None
@@ -85,8 +88,7 @@ class CTraderApiClient:
         
         # Handle specific message types that don't have requestId
         if message.payloadType == ProtoOAApplicationAuthRes().payloadType:
-            print("Received application auth response - authentication successful")
-            # Application auth successful
+            logging.info("Received application auth response - authentication successful")
             self._is_app_authenticated = True
             if self._app_auth_deferred is not None:
                 self._app_auth_deferred.callback(msg)
@@ -94,14 +96,14 @@ class CTraderApiClient:
             return
             
         elif message.payloadType == ProtoOAGetAccountListByAccessTokenRes().payloadType:
-            print("Received account list response")
+            logging.info("Received account list response")
             if self._account_list_deferred is not None:
                 self._account_list_deferred.callback(msg)
                 self._account_list_deferred = None
             return
             
         elif message.payloadType == ProtoOAAccountAuthRes().payloadType:
-            print("Received account auth response")
+            logging.info("Received account auth response")
             if self._account_auth_deferred is not None:
                 self._account_auth_deferred.callback(msg)
                 self._account_auth_deferred = None
@@ -112,22 +114,18 @@ class CTraderApiClient:
             for callback in self._execution_event_callbacks:
                 callback(msg)
         else:
-            print(f"Received unhandled message type {message.payloadType}: {msg}")
+            logging.warning(f"Received unhandled message type {message.payloadType}: {msg}")
 
     def authenticate_and_authorize(self):
         """Authenticates the application and authorizes the trading account."""
-        print(f"Starting authentication for account {self.account_id}")
+        logging.info(f"Starting authentication.")
         
-        # Check if we have credentials
         if not self.credentials:
-            raise Exception(f"No credentials found for account {self.account_id}")
+            raise Exception(f"No credentials found.")
         
-        # Check if we have access token
         if not self.access_token:
-            print(f"Warning: No access token found for account {self.account_id}")
-            # We can still try application authentication, but account auth will fail
+            logging.warning(f"No access token found.")
         
-        # Application authentication
         auth_req = ProtoOAApplicationAuthReq()
         auth_req.clientId = self.credentials["clientId"]
         auth_req.clientSecret = self.credentials["clientSecret"]
@@ -135,7 +133,6 @@ class CTraderApiClient:
         self._app_auth_deferred = Deferred()
         self.websocket_client.send(auth_req)
         
-        # Set timeout for authentication
         from twisted.internet import reactor
         self._app_auth_deferred.addTimeout(10, reactor)
         
@@ -145,22 +142,21 @@ class CTraderApiClient:
 
     def _on_auth_error(self, failure):
         """Handle authentication errors"""
-        print(f"Authentication error for account {self.account_id}: {failure.getErrorMessage()}")
+        logging.error(f"Authentication error: {failure.getErrorMessage()}")
         return failure
 
     def _on_app_authenticated(self, response):
         """Callback when application is authenticated"""
-        print(f"Application for account {self.account_id} authenticated.")
+        logging.info(f"Application authenticated.")
         
-        # Now get account list
         if not self.access_token:
-            raise Exception(f"No access token available for account {self.account_id}. Cannot proceed with account authorization.")
+            raise Exception(f"No access token available. Cannot proceed with account authorization.")
         
         return self._get_account_list()
 
     def _get_account_list(self):
         """Get account list after application authentication"""
-        print("Getting account list...")
+        logging.info("Getting account list...")
         
         if not self.access_token:
             raise Exception("Cannot get account list: access token is None")
@@ -171,7 +167,6 @@ class CTraderApiClient:
         self._account_list_deferred = Deferred()
         self.websocket_client.send(acc_list_req)
         
-        # Set timeout
         from twisted.internet import reactor
         self._account_list_deferred.addTimeout(10, reactor)
         
@@ -182,15 +177,16 @@ class CTraderApiClient:
     def _on_account_list(self, response):
         """Handle account list response"""
         if not response.ctidTraderAccount:
-            raise Exception(f"No trading accounts found for account {self.account_id}")
+            raise Exception(f"No trading accounts found.")
 
         self.trader_accounts = list(response.ctidTraderAccount)
-        print(f"Found {len(self.trader_accounts)} trading accounts.")
+        logging.info(f"Found {len(self.trader_accounts)} trading accounts.")
         return self.trader_accounts
 
     def authorize_trading_account(self, ctid_trader_account_id: int):
         """Authorizes a specific trading account."""
-        print(f"Authorizing account {ctid_trader_account_id}...")
+        logging.info(f"Authorizing account {ctid_trader_account_id}...")
+        self.account_id = ctid_trader_account_id
 
         if not self.access_token:
             raise Exception("Cannot authorize account: access token is None")
@@ -202,7 +198,7 @@ class CTraderApiClient:
         d = self._send_request(acc_auth_req, ProtoOAAccountAuthRes().payloadType)
 
         def on_authorized(response):
-            print(f"Account {ctid_trader_account_id} authorized.")
+            logging.info(f"Account {ctid_trader_account_id} authorized.")
             return response
 
         d.addCallback(on_authorized)
@@ -246,7 +242,9 @@ class CTraderApiClient:
 
     def connect(self):
         """Connects to the cTrader WebSocket."""
+        logging.info("Connecting to cTrader WebSocket...")
         self.websocket_client.startService()
+        logging.info("cTrader WebSocket connected.")
 
     def subscribe_to_ticks(self, ctid_trader_account_id: int, symbol_id: int) -> Deferred:
         request = ProtoOASubscribeSpotsReq()
