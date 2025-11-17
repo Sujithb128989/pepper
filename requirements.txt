@@ -3,4 +3,5 @@ protobuf
 treq
 service_identity
 twisted
-ctrader-open-api
+python-telegram-bot
+python-dotenv

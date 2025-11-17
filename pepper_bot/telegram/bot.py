@@ -8,7 +8,9 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+import asyncio
 from urllib.parse import urlparse, parse_qs
+from twisted.internet import defer, reactor
 
 
 from pepper_bot.core.config import get_all_settings, set_setting
@@ -38,17 +40,25 @@ async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def authorize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the authorization conversation."""
-    credentials = get_all_settings()
+    credentials = get_credentials()
     client_id = credentials["clientId"]
-    redirect_uri = "https://example.com" # This can be any URL
+    redirect_uri = "https://spotware.com" # Must match registered redirect URI
 
     auth_url = f"https://id.ctrader.com/my/settings/openapi/grantingaccess/?client_id={client_id}&redirect_uri={redirect_uri}&scope=trading&product=web"
 
-    await update.message.reply_text(
-        "Please authorize the bot by visiting the following URL. "
-        "After you have authorized the bot, please paste the full redirect URL back into this chat."
-    )
-    await update.message.reply_text(auth_url)
+    try:
+        await update.message.reply_text(
+            "Please authorize the bot by visiting the following URL. "
+            "After you have authorized the bot, please paste the full redirect URL back into this chat."
+        )
+        await update.message.reply_text(auth_url)
+    except (AttributeError, TypeError):
+        # Handle case where update.message is None (callback query)
+        await update.callback_query.message.reply_text(
+            "Please authorize the bot by visiting the following URL. "
+            "After you have authorized the bot, please paste the full redirect URL back into this chat."
+        )
+        await update.callback_query.message.reply_text(auth_url)
 
     context.user_data["redirect_uri"] = redirect_uri
     return AWAITING_AUTH
@@ -60,16 +70,35 @@ async def awaiting_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = parse_qs(url.query)
     auth_code = query["code"][0]
 
-    await get_access_token(auth_code, redirect_uri)
-
-    await update.message.reply_text("Authorization successful.")
-    await update.message.reply_text("Now, please use the /start command to select your trading accounts.")
+    try:
+        # Convert Twisted Deferred to asyncio Future
+        loop = asyncio.get_event_loop()
+        d = get_access_token(auth_code, redirect_uri)
+        
+        future = loop.create_future()
+        
+        def on_success(result):
+            loop.call_soon_threadsafe(future.set_result, result)
+        
+        def on_error(failure):
+            loop.call_soon_threadsafe(future.set_exception, failure.value)
+        
+        d.addCallback(on_success)
+        d.addErrback(on_error)
+        
+        await future
+        
+        await update.message.reply_text("Authorization successful!")
+        await update.message.reply_text("Now, please use the /start command to select your trading accounts.")
+    except Exception as e:
+        await update.message.reply_text(f"Authorization failed: {str(e)}")
 
     return ConversationHandler.END
 
 async def select_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Starts the account selection process."""
-    ctrader_manager = context.application.user_data["ctrader_manager"]
+    global _ctrader_manager
+    ctrader_manager = _ctrader_manager
     accounts = await ctrader_manager.get_trader_accounts()
 
     account_details = []
@@ -122,12 +151,48 @@ async def set_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Accounts selected.")
     return ConversationHandler.END
 
+# Placeholder handler functions
+async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for main menu buttons."""
+    pass
+
+async def settings_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for settings button."""
+    pass
+
+async def select_pair_sl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for selecting pair for stop loss."""
+    pass
+
+async def set_sl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for setting stop loss."""
+    pass
+
+async def select_pair_ts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for selecting pair for take profit."""
+    pass
+
+async def set_ts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for setting take profit."""
+    pass
+
+async def select_pair_vol(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for selecting pair for volume."""
+    pass
+
+async def set_vol(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for setting volume."""
+    pass
+
 # ... (rest of the bot code)
 
 async def run_bot(token: str, ctrader_manager):
     """Runs the Telegram bot."""
+    # Store ctrader_manager in a module-level variable so handlers can access it
+    global _ctrader_manager
+    _ctrader_manager = ctrader_manager
+    
     application = Application.builder().token(token).build()
-    application.user_data["ctrader_manager"] = ctrader_manager
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", _start), CommandHandler("authorize", authorize), CommandHandler("select_accounts", select_accounts)],

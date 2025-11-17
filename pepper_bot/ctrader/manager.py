@@ -12,7 +12,8 @@ class CTraderManager:
     def __init__(self):
         logging.info("Initializing CTraderManager.")
         self.client: CTraderApiClient = None
-        self.ready_future = asyncio.Future()
+        self.loop = asyncio.get_event_loop()
+        self.ready_future = self.loop.create_future()
         logging.info("CTraderManager initialized.")
 
     def start(self):
@@ -38,8 +39,7 @@ class CTraderManager:
     def _on_client_ready(self, _):
         """Callback for when the client is fully authenticated and ready."""
         logging.info("Client is ready.")
-        loop = asyncio.get_running_loop()
-        loop.call_soon_threadsafe(self.ready_future.set_result, None)
+        self.loop.call_soon_threadsafe(self.ready_future.set_result, None)
 
     def get_trader_accounts(self):
         future = asyncio.Future()

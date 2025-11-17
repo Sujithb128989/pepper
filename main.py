@@ -50,13 +50,20 @@ async def main():
     logging.info("cTrader clients are ready.")
 
     logging.info("Starting Telegram bot...")
-    await run_bot(credentials["telegram_token"], ctrader_manager)
+    await run_bot(credentials["telegram_token"].strip(), ctrader_manager)
     logging.info("Telegram bot started.")
 
     # Keep the application alive until it is manually stopped
     stop_event = asyncio.Event()
-    loop.add_signal_handler(signal.SIGINT, stop_event.set)
-    loop.add_signal_handler(signal.SIGTERM, stop_event.set)
+    
+    # Signal handlers are not supported on Windows, so we use a try-except
+    try:
+        loop.add_signal_handler(signal.SIGINT, stop_event.set)
+        loop.add_signal_handler(signal.SIGTERM, stop_event.set)
+    except NotImplementedError:
+        # Signal handlers not supported on Windows - just log and continue
+        logging.info("Signal handlers not supported on this platform.")
+    
     logging.info("Application running. Press Ctrl+C to exit.")
     await stop_event.wait()
 
