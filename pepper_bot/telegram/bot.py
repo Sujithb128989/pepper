@@ -26,15 +26,19 @@ async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     credentials = get_credentials()
     if not credentials.get("accessToken"):
         await update.message.reply_text(
-            "Welcome to Pepper, your cTrader trading bot!\n\n"
-            "It looks like you haven't authorized the bot yet. "
-            "Please use the /authorize command to get started."
+            "🤖 *Welcome to Pepper Trading Bot*\n\n"
+            "Your automated cTrader straddle strategy assistant.\n\n"
+            "⚠️ You need to authorize first.\n"
+            "Use /authorize to connect your cTrader account.",
+            parse_mode="Markdown"
         )
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "Welcome to Pepper, your cTrader trading bot!",
+        "🚀 *Pepper Trading Bot*\n\n"
+        "Ready to execute straddle strategies!",
         reply_markup=main_menu(),
+        parse_mode="Markdown"
     )
     return SELECTING_ACTION
 
@@ -48,15 +52,23 @@ async def authorize(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await update.message.reply_text(
-            "Please authorize the bot by visiting the following URL. "
-            "After you have authorized the bot, please paste the full redirect URL back into this chat."
+            "🔐 *Authorization Required*\n\n"
+            "1️⃣ Click the link below\n"
+            "2️⃣ Authorize the app in cTrader\n"
+            "3️⃣ Copy the full redirect URL\n"
+            "4️⃣ Paste it back here",
+            parse_mode="Markdown"
         )
         await update.message.reply_text(auth_url)
     except (AttributeError, TypeError):
         # Handle case where update.message is None (callback query)
         await update.callback_query.message.reply_text(
-            "Please authorize the bot by visiting the following URL. "
-            "After you have authorized the bot, please paste the full redirect URL back into this chat."
+            "🔐 *Authorization Required*\n\n"
+            "1️⃣ Click the link below\n"
+            "2️⃣ Authorize the app in cTrader\n"
+            "3️⃣ Copy the full redirect URL\n"
+            "4️⃣ Paste it back here",
+            parse_mode="Markdown"
         )
         await update.callback_query.message.reply_text(auth_url)
 
@@ -88,8 +100,11 @@ async def awaiting_auth(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await future
         
-        await update.message.reply_text("Authorization successful!")
-        await update.message.reply_text("Now, please use the /start command to select your trading accounts.")
+        await update.message.reply_text(
+            "✅ *Authorization Successful!*\n\n"
+            "Use /start to begin trading.",
+            parse_mode="Markdown"
+        )
     except Exception as e:
         await update.message.reply_text(f"Authorization failed: {str(e)}")
 
@@ -108,12 +123,16 @@ async def select_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(account_details) < 2:
         await update.message.reply_text(
-            "Error: At least two trading accounts are required for the straddle strategy."
+            "❌ *Error*\n\n"
+            "At least two trading accounts are required for the straddle strategy.",
+            parse_mode="Markdown"
         )
         return ConversationHandler.END
     elif len(account_details) == 2:
         await update.message.reply_text(
-            "Exactly two accounts found. Automatically selecting them for the straddle strategy."
+            "✅ *Accounts Auto-Selected*\n\n"
+            "Found exactly 2 accounts. Automatically configured for straddle strategy.",
+            parse_mode="Markdown"
         )
         account1 = account_details[0][0]
         account2 = account_details[1][0]
@@ -129,7 +148,11 @@ async def select_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.application.user_data["account1"] = account1
     context.application.user_data["account2"] = account2
-    await update.message.reply_text("Accounts selected.")
+    await update.message.reply_text(
+        "✅ *Accounts Selected*\n\n"
+        "Configuration complete. Use /start to trade.",
+        parse_mode="Markdown"
+    )
     return ConversationHandler.END
 
 async def set_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,13 +165,20 @@ async def set_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         account2 = account_details[index2][0]
     except (ValueError, IndexError):
         await update.message.reply_text(
-            "Invalid selection. Please enter two valid numbers separated by a space."
+            "❌ *Invalid Selection*\n\n"
+            "Please enter two valid numbers separated by a space.\n"
+            "Example: `1 2`",
+            parse_mode="Markdown"
         )
         return SELECTING_ACCOUNTS
 
     context.application.user_data["account1"] = account1
     context.application.user_data["account2"] = account2
-    await update.message.reply_text("Accounts selected.")
+    await update.message.reply_text(
+        "✅ *Accounts Selected*\n\n"
+        "Configuration complete. Use /start to trade.",
+        parse_mode="Markdown"
+    )
     return ConversationHandler.END
 
 # Placeholder handler functions
