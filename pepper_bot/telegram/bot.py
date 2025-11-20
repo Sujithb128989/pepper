@@ -27,7 +27,10 @@ def check_authorized(func):
     """Decorator to check if user is authorized"""
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_chat.id != AUTHORIZED_CHAT_ID:
-            await update.message.reply_text("⛔ Unauthorized access denied.")
+            try:
+                await update.message.reply_text("⛔ Unauthorized access denied.")
+            except:
+                await update.callback_query.message.reply_text("⛔ Unauthorized access denied.")
             return ConversationHandler.END
         return await func(update, context)
     return wrapper
@@ -113,6 +116,54 @@ async def set_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.application.user_data["account2"] = account2
     await update.message.reply_text(
         "✅ *Accounts Selected*\n\n"
+        "Configuration complete. Use /start to trade.",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+# Placeholder handler functions
+@check_authorized
+async def main_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for main menu buttons."""
+    pass
+
+@check_authorized
+async def settings_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for settings button."""
+    pass
+
+@check_authorized
+async def select_pair_sl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for selecting pair for stop loss."""
+    pass
+
+@check_authorized
+async def set_sl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for setting stop loss."""
+    pass
+
+@check_authorized
+async def select_pair_ts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for selecting pair for take profit."""
+    pass
+
+@check_authorized
+async def set_ts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for setting take profit."""
+    pass
+
+@check_authorized
+async def select_pair_vol(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for selecting pair for volume."""
+    pass
+
+@check_authorized
+async def set_vol(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler for setting volume."""
+    pass
+
+async def run_bot(token: str, ctrader_manager):
+    """Runs the Telegram bot."""
     # Store ctrader_manager in a module-level variable so handlers can access it
     global _ctrader_manager
     _ctrader_manager = ctrader_manager
