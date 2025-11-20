@@ -241,9 +241,6 @@ async def run_bot(token: str, ctrader_manager):
     )
 
     application.add_handler(conv_handler)
-    # application.add_handler(CommandHandler("stats", stats))
-
-    await application.bot.send_message(chat_id="5705498219", text="Bot is online!")
 
     await application.initialize()
     await application.start()
